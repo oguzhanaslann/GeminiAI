@@ -34,7 +34,7 @@ inline fun <T> DataState<T>.isLoading(crossinline block: (isLoading: Boolean) ->
     return this
 }
 
-inline fun <T> DataState<T>.onLoading(crossinline block: () -> Unit): DataState<T> {
+inline fun <T> DataState<T>.onLoading(block: () -> Unit): DataState<T> {
     if (this is DataState.Loading) {
         block()
     }

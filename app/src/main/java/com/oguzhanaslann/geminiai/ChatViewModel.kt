@@ -9,9 +9,12 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-class ChatViewModel(
-    private val generativeModel: GenerativeModel
-) : ViewModel() {
+class ChatViewModel : ViewModel() {
+
+    val _activeModel = MutableStateFlow<Model>(Model.Pro)
+    val activeModel = _activeModel.asStateFlow()
+
+    private val generativeModel: GenerativeModel get() = _activeModel.value.create()
 
     private val _uiState: MutableStateFlow<ChatState> =
         MutableStateFlow(ChatState.initial())
@@ -24,7 +27,7 @@ class ChatViewModel(
         _uiState.update {
             it.copy(
                 chatHistory = it.chatHistory
-                    .plus(DataState.Success(Message(it.prompt,it.prompt, Sender.User)))
+                    .plus(DataState.Success(Message(it.prompt, it.prompt, Sender.User)))
                     .plus(DataState.Loading),
                 prompt = String.empty
             )
@@ -38,7 +41,15 @@ class ChatViewModel(
                         it.copy(
                             chatHistory = it.chatHistory
                                 .dropLast(1)
-                                .plus(DataState.Success(Message(outputContent,outputContent, Sender.Bot))),
+                                .plus(
+                                    DataState.Success(
+                                        Message(
+                                            outputContent,
+                                            outputContent,
+                                            Sender.Bot
+                                        )
+                                    )
+                                ),
                         )
                     }
                 }
@@ -56,5 +67,13 @@ class ChatViewModel(
 
     fun onPromptChange(prompt: String) {
         _uiState.update { it.copy(prompt = prompt) }
+    }
+
+    fun onNewChat() {
+        _uiState.update { ChatState.initial() }
+    }
+
+    fun onModelSelected(model: Model) {
+        _activeModel.value = model
     }
 }
