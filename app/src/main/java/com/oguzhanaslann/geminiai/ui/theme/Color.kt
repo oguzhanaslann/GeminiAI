@@ -1,4 +1,4 @@
-package com.example.geminiai.ui.theme
+package com.oguzhanaslann.geminiai.ui.theme
 
 import androidx.compose.ui.graphics.Color
 

@@ -1,0 +1,47 @@
+                when (uiState) {
+                    ChatState.Initial -> {
+                        // Nothing is shown
+                        Column {
+                            Image(
+                                painter = painterResource(id = R.drawable.ic_geminiai),
+                                contentDescription = null
+                            )
+                            Text(
+                                text = stringResource(id = R.string.app_name),
+                                color = Color.White
+                            )
+                        }
+                    }
+
+                    ChatState.Loading -> {
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .padding(all = 8.dp)
+                                .align(Alignment.CenterHorizontally)
+                        ) {
+                            CircularProgressIndicator()
+                        }
+                    }
+
+                    is ChatState.Success -> {
+                        Row(modifier = Modifier.padding(all = 8.dp)) {
+                            Icon(
+                                Icons.Outlined.Person,
+                                contentDescription = "Person Icon"
+                            )
+                            Text(
+                                text = uiState.outputText,
+                                modifier = Modifier.padding(horizontal = 8.dp)
+                            )
+                        }
+                    }
+
+                    is ChatState.Error -> {
+                        Text(
+                            text = uiState.errorMessage,
+                            color = Color.Red,
+                            modifier = Modifier.padding(all = 8.dp)
+                        )
+                    }
+                }
