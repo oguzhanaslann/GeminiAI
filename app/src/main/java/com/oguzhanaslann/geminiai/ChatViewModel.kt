@@ -1,8 +1,10 @@
 package com.oguzhanaslann.geminiai
 
+import android.graphics.Bitmap
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.ai.client.generativeai.GenerativeModel
+import com.google.ai.client.generativeai.type.content
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -27,15 +29,19 @@ class ChatViewModel : ViewModel() {
         _uiState.update {
             it.copy(
                 chatHistory = it.chatHistory
-                    .plus(DataState.Success(Message(it.prompt, it.prompt, Sender.User)))
+                    .plus(DataState.Success(Message(it.prompt.text, it.prompt.text, Sender.User)))
                     .plus(DataState.Loading),
-                prompt = String.empty
+                prompt = it.prompt
             )
         }
 
         viewModelScope.launch {
             try {
-                val response = generativeModel.generateContent(prompt)
+                val content = content {
+                    prompt.images?.forEach(::image)
+                    text(prompt.text)
+                }
+                val response = generativeModel.generateContent(content)
                 response.text?.let { outputContent ->
                     _uiState.update {
                         it.copy(
@@ -50,6 +56,7 @@ class ChatViewModel : ViewModel() {
                                         )
                                     )
                                 ),
+                            prompt = it.prompt.copy(text = String.empty)
                         )
                     }
                 }
@@ -66,7 +73,7 @@ class ChatViewModel : ViewModel() {
     }
 
     fun onPromptChange(prompt: String) {
-        _uiState.update { it.copy(prompt = prompt) }
+        _uiState.update { it.copy(prompt = it.prompt.copy(text = prompt)) }
     }
 
     fun onNewChat() {
@@ -75,5 +82,14 @@ class ChatViewModel : ViewModel() {
 
     fun onModelSelected(model: Model) {
         _activeModel.value = model
+        onNewChat()
+    }
+
+    fun onVisionImagesSelected(bitmaps: List<Bitmap>) {
+        _uiState.update { it.copy(prompt = it.prompt.copy(images = bitmaps)) }
+    }
+
+    fun deleteImage(bitmap: Bitmap) {
+        _uiState.update { it.copy(prompt = it.prompt.copy(images = it.prompt.images?.filter { it != bitmap })) }
     }
 }

@@ -1,10 +1,10 @@
 package com.oguzhanaslann.geminiai
 
 data class ChatState(
-    val prompt: String,
+    val prompt: Prompt,
     val chatHistory: List<DataState<Message>>,
 ) {
     companion object {
-        fun initial() = ChatState(String.empty, emptyList())
+        fun initial() = ChatState(Prompt.empty(), emptyList())
     }
 }

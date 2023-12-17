@@ -1,31 +1,35 @@
 package com.oguzhanaslann.geminiai
 
+import android.graphics.Bitmap
+import android.graphics.ImageDecoder
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.CenterAlignedTopAppBar
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DrawerState
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -53,6 +57,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
@@ -60,8 +66,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.geminiai.R
-import com.oguzhanaslann.geminiai.ui.BotChatMessageView
-import com.oguzhanaslann.geminiai.ui.UserChatMessageView
 import com.oguzhanaslann.geminiai.ui.theme.GeminiAITheme
 import kotlinx.coroutines.launch
 
@@ -84,13 +88,30 @@ internal fun GeminiAIScreen(
 
     val chatState by chatViewModel.uiState.collectAsState()
     val model by chatViewModel.activeModel.collectAsState()
+    val context = LocalContext.current
+
+    val photoPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickMultipleVisualMedia(maxItems = 16)
+    ) { uri ->
+        val bitmaps = uri.map {
+            ImageDecoder.decodeBitmap(ImageDecoder.createSource(context.contentResolver, it))
+        }
+        chatViewModel.onVisionImagesSelected(bitmaps)
+    }
+
     GeminiAIScreenView(
         chatState,
         selectedModel = model,
         onPromptChange = chatViewModel::onPromptChange,
-        onSendMessageClicked = { inputText -> chatViewModel.generateContent() },
+        onSendMessageClicked = chatViewModel::generateContent,
         onNewChatClicked = chatViewModel::onNewChat,
-        onModelSelected = chatViewModel::onModelSelected
+        onModelSelected = chatViewModel::onModelSelected,
+        onImageAddClicked = {
+            photoPicker.launch(
+                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+            )
+        },
+        onImageDeleteClicked = chatViewModel::deleteImage
     )
 }
 
@@ -99,9 +120,11 @@ fun GeminiAIScreenView(
     uiState: ChatState = ChatState.initial(),
     selectedModel: Model,
     onPromptChange: (String) -> Unit,
-    onSendMessageClicked: (String) -> Unit = {},
+    onSendMessageClicked: () -> Unit = {},
     onNewChatClicked: () -> Unit = {},
-    onModelSelected: (Model) -> Unit = {}
+    onModelSelected: (Model) -> Unit = {},
+    onImageAddClicked: () -> Unit = {},
+    onImageDeleteClicked: (Bitmap) -> Unit = {}
 ) {
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
@@ -179,15 +202,17 @@ fun GeminiAIScreenView(
                 ChatScreenView(
                     modifier = Modifier.padding(it),
                     uiState = uiState,
+                    selectedModel = selectedModel,
                     onPromptChange = onPromptChange,
-                    onSendMessageClicked = onSendMessageClicked
+                    onSendMessageClicked = onSendMessageClicked,
+                    onImageAddClicked = onImageAddClicked,
+                    onImageDeleteClicked = onImageDeleteClicked
                 )
             }
         )
     }
 }
 
-suspend fun DrawerState.toggle() = if (isClosed) open() else close()
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
@@ -282,8 +307,11 @@ private fun GeminiAITopBar(
 private fun ChatScreenView(
     modifier: Modifier = Modifier,
     uiState: ChatState,
+    selectedModel: Model,
     onPromptChange: (String) -> Unit,
-    onSendMessageClicked: (String) -> Unit
+    onSendMessageClicked: () -> Unit,
+    onImageAddClicked: () -> Unit,
+    onImageDeleteClicked: (Bitmap) -> Unit = {}
 ) {
     Surface(
         modifier = Modifier
@@ -297,76 +325,102 @@ private fun ChatScreenView(
                 .padding(horizontal = 16.dp)
                 .padding(bottom = 16.dp)
         ) {
-
-            LazyColumn(
+            ChatList(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
-                    .padding(bottom = 56.dp),
-            ) {
-                items(uiState.chatHistory) {
-                    it.onError {
-                        Text(
-                            text = it.localizedMessage.orEmpty(),
-                            color = Color.Red,
-                            modifier = Modifier.padding(all = 8.dp)
-                        )
-                    }.onLoading {
-                        CircularProgressIndicator()
-                    }.onSuccess {
-                        when (it.sender) {
-                            Sender.Bot -> BotChatMessageView(
-                                modifier = Modifier
-                                    .fillParentMaxWidth()
-                                    .heightIn(min = 48.dp),
-                                text = it.content
-                            )
+                    .padding(
+                        bottom = when {
+                            uiState.prompt.images.isNullOrEmpty() -> 56.dp
+                            else -> 72.dp
+                        }
+                    ),
+                uiState
+            )
 
-                            Sender.User -> UserChatMessageView(
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+            ) {
+                uiState.prompt.images?.let {
+                    Row(
+                        modifier = Modifier
+                            .horizontalScroll(rememberScrollState()),
+                    ) {
+                        it.forEach { bitmap ->
+                            SelectedImageView(
                                 modifier = Modifier
-                                    .fillParentMaxWidth()
-                                    .heightIn(min = 48.dp),
-                                text = it.content
+                                    .padding(end = 24.dp)
+                                    .size(48.dp),
+                                bitmap = bitmap.asImageBitmap(),
+                                onClearClicked =  { onImageDeleteClicked(bitmap) }
                             )
                         }
                     }
                 }
-            }
 
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .align(Alignment.BottomCenter)
-            ) {
-                OutlinedTextField(
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(end = 48.dp)
-                        .heightIn(min = 56.dp)
-                        .align(Alignment.CenterStart),
-                    value = uiState.prompt,
-                    onValueChange = onPromptChange,
-                    shape = RoundedCornerShape(24.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Color(0xFF8c8375),
-                        unfocusedBorderColor = Color(0xFF343642),
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color(0xFF737576)
-                    ),
-                )
-                IconButton(
-                    modifier = Modifier
-                        .size(48.dp)
-                        .align(Alignment.CenterEnd),
-                    onClick = { onSendMessageClicked(uiState.prompt) }
                 ) {
-                    Icon(
-                        imageVector = Icons.Filled.Send,
-                        contentDescription = "Send",
-                        tint = Color.White
+                    OutlinedTextField(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(end = 48.dp)
+                            .heightIn(min = 56.dp)
+                            .align(Alignment.CenterStart),
+                        value = uiState.prompt.text,
+                        onValueChange = onPromptChange,
+                        shape = RoundedCornerShape(24.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = Color(0xFF8c8375),
+                            unfocusedBorderColor = Color(0xFF343642),
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color(0xFF737576)
+                        ),
+                        trailingIcon = visionTrailingAction(selectedModel, onImageAddClicked)
                     )
+                    IconButton(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .align(Alignment.CenterEnd),
+                        onClick = { onSendMessageClicked() }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Send,
+                            contentDescription = "Send",
+                            tint = Color.White
+                        )
+                    }
                 }
             }
         }
+    }
+}
+
+
+@Composable
+fun visionTrailingAction(
+    selectedModel: Model,
+    onImageAddClicked: () -> Unit = {}
+): @Composable (() -> Unit)? {
+    return when {
+        selectedModel is Model.Vision -> composable {
+            IconButton(
+                modifier = Modifier.padding(end = 8.dp),
+                onClick = onImageAddClicked
+            ) {
+                Icon(
+                    painter = painterResource(id = R.drawable.baseline_photo_camera_24),
+                    tint = MaterialTheme.colorScheme.onBackground,
+                    contentDescription = null
+                )
+            }
+        }
+
+        else -> null
     }
 }
 
@@ -378,7 +432,8 @@ fun SummarizeScreenPreview() {
         val (value, onChange) = remember { mutableStateOf("Gemini-GPT") }
         GeminiAIScreenView(
             uiState = ChatState(
-                value, listOf(
+                Prompt(value),
+                listOf(
                     DataState.Success(Message("", "Hello", Sender.User)),
                     DataState.Success(Message("", "Hello to you", Sender.Bot)),
                     DataState.Error(Throwable("asdsad")),
