@@ -4,33 +4,45 @@ import com.example.geminiai.BuildConfig
 import com.google.ai.client.generativeai.GenerativeModel
 
 sealed class Model {
-    abstract fun create(): GenerativeModel
+    abstract fun get(): GenerativeModel
 
     abstract fun name(): String
 
-    data object Pro : Model() {
-        private val model by lazy {
-            GenerativeModel(
-                modelName = "gemini-pro",
-                apiKey = BuildConfig.apiKey
-            )
-        }
+    abstract fun updateKey(key: String)
 
-        override fun create(): GenerativeModel = model
+    data object Pro : Model() {
+        private var model = GenerativeModel(
+            modelName = "gemini-pro",
+            apiKey = BuildConfig.apiKey
+        )
+
+        override fun get(): GenerativeModel = model
 
         override fun name(): String = "gemini-pro"
-    }
 
-    data object Vision: Model() {
-        private val model by lazy {
-            GenerativeModel(
-                modelName = "gemini-pro-vision",
-                apiKey = BuildConfig.apiKey
+        override fun updateKey(key: String) {
+            model = GenerativeModel(
+                modelName = "gemini-pro",
+                apiKey = key
             )
         }
+    }
 
-        override fun create(): GenerativeModel = model
+    data object Vision : Model() {
+        private var model = GenerativeModel(
+            modelName = "gemini-pro-vision",
+            apiKey = BuildConfig.apiKey
+        )
+
+        override fun get(): GenerativeModel = model
 
         override fun name(): String = "gemini-pro-vision"
+
+        override fun updateKey(key: String) {
+            model = GenerativeModel(
+                modelName = "gemini-pro-vision",
+                apiKey = key
+            )
+        }
     }
 }

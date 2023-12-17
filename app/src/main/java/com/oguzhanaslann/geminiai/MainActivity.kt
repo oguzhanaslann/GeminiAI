@@ -12,6 +12,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -30,6 +31,7 @@ import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.DrawerState
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -64,13 +66,16 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.geminiai.R
 import com.oguzhanaslann.geminiai.ui.theme.GeminiAITheme
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+        installSplashScreen()
         super.onCreate(savedInstanceState)
         setContent {
             GeminiAITheme {
@@ -111,7 +116,8 @@ internal fun GeminiAIScreen(
                 PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
             )
         },
-        onImageDeleteClicked = chatViewModel::deleteImage
+        onImageDeleteClicked = chatViewModel::deleteImage,
+        onChangeAPIKey = chatViewModel::onChangeAPIKey
     )
 }
 
@@ -124,76 +130,82 @@ fun GeminiAIScreenView(
     onNewChatClicked: () -> Unit = {},
     onModelSelected: (Model) -> Unit = {},
     onImageAddClicked: () -> Unit = {},
-    onImageDeleteClicked: (Bitmap) -> Unit = {}
+    onImageDeleteClicked: (Bitmap) -> Unit = {},
+    onChangeAPIKey: (String) -> Unit = {},
 ) {
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
+    var showDialog by remember { mutableStateOf(false) }
 
     BackHandler(enabled = drawerState.isOpen) {
         scope.launch { drawerState.close() }
     }
 
+    StandardDialog(
+        show = showDialog,
+        onDismissRequest = { showDialog = false },
+        content = {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth(0.85f)
+                    .height(180.dp),
+                color = MaterialTheme.colorScheme.surface,
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Column(
+                    Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "Set Api key",
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                    val (key, onValueChange) = remember { mutableStateOf("") }
+                    OutlinedTextField(value = key, onValueChange = onValueChange)
+                    Row {
+                        TextButton(onClick = {
+                            onChangeAPIKey(key)
+                            showDialog = false
+                        }) {
+                            Text(
+                                text = "Apply",
+                                color = MaterialTheme.colorScheme.onBackground
+                            )
+                        }
+
+                        TextButton(onClick = { showDialog = false }) {
+                            Text(
+                                text = "Cancel",
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    )
+
     ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
-            ModalDrawerSheet(
-                drawerShape = RectangleShape,
-                drawerContainerColor = Color(0xFF141414)
-            ) {
-
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 16.dp)
-                        .padding(start = 16.dp)
-                        .padding(end = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(
-                        modifier = Modifier
-                            .size(24.dp),
-                        painter = painterResource(id = R.drawable.ic_geminiai),
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onBackground
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = stringResource(id = R.string.app_name),
-                        color = MaterialTheme.colorScheme.onBackground,
-                        fontSize = 16.sp
-                    )
-
-                    Spacer(modifier = Modifier.weight(1f, true))
-                    IconButton(onClick = {
-                        onNewChatClicked()
-                        scope.launch { drawerState.close() }
-                    }) {
-                        Icon(
-                            modifier = Modifier.size(18.dp),
-                            painter = painterResource(id = R.drawable.ic_new_chat),
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onBackground
-                        )
+            GeminiAIDrawerView(
+                scope = scope,
+                drawerState = drawerState,
+                onNewChatClicked = onNewChatClicked,
+                onChangeAPIKey = {
+                    scope.launch {
+                        drawerState.close()
+                        showDialog = true
                     }
                 }
-
-
-                Row(Modifier.padding(16.dp)) {
-                    Text(
-                        text = "API key",
-                        color = Color.White
-                    )
-                }
-            }
+            )
         },
     ) {
         Scaffold(
             topBar = {
                 GeminiAITopBar(
                     selectedModel = selectedModel,
-                    onNavigationClicked = {
-                        scope.launch { drawerState.toggle() }
-                    },
+                    onNavigationClicked = { scope.launch { drawerState.toggle() } },
                     onNewChatClicked = onNewChatClicked,
                     onModelSelected = onModelSelected
                 )
@@ -210,6 +222,66 @@ fun GeminiAIScreenView(
                 )
             }
         )
+    }
+}
+
+@Composable
+private fun GeminiAIDrawerView(
+    scope: CoroutineScope,
+    drawerState: DrawerState,
+    onNewChatClicked: () -> Unit,
+    onChangeAPIKey: () -> Unit
+) {
+    ModalDrawerSheet(
+        drawerShape = RectangleShape,
+        drawerContainerColor = MaterialTheme.colorScheme.surface
+    ) {
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 16.dp)
+                .padding(start = 16.dp)
+                .padding(end = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                modifier = Modifier
+                    .size(24.dp),
+                painter = painterResource(id = R.drawable.ic_geminiai),
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onBackground
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                text = stringResource(id = R.string.app_name),
+                color = MaterialTheme.colorScheme.onBackground,
+                fontSize = 16.sp
+            )
+
+            Spacer(modifier = Modifier.weight(1f, true))
+            IconButton(onClick = {
+                onNewChatClicked()
+                scope.launch { drawerState.close() }
+            }) {
+                Icon(
+                    modifier = Modifier.size(18.dp),
+                    painter = painterResource(id = R.drawable.ic_new_chat),
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onBackground
+                )
+            }
+        }
+
+
+        Row(Modifier.padding(16.dp)) {
+            TextButton(onClick = onChangeAPIKey) {
+                Text(
+                    text = "Change API Key",
+                    color = Color.White
+                )
+            }
+        }
     }
 }
 
@@ -236,7 +308,7 @@ private fun GeminiAITopBar(
             var dropDownState by remember { mutableStateOf(false) }
             Column {
                 DropdownMenu(
-                    modifier = Modifier.background(Color(0xFF141414)),
+                    modifier = Modifier.background(MaterialTheme.colorScheme.surface),
                     expanded = dropDownState,
                     onDismissRequest = { dropDownState = false }
                 ) {
@@ -252,7 +324,7 @@ private fun GeminiAITopBar(
                         }) {
                             Text(
                                 text = Model.Pro.name(),
-                                color = MaterialTheme.colorScheme.onBackground,
+                                color = MaterialTheme.colorScheme.onSurface,
                                 style = MaterialTheme.typography.titleMedium
                             )
                         }
@@ -262,7 +334,7 @@ private fun GeminiAITopBar(
                         }) {
                             Text(
                                 text = Model.Vision.name(),
-                                color = MaterialTheme.colorScheme.onBackground,
+                                color = MaterialTheme.colorScheme.onSurface,
                                 style = MaterialTheme.typography.titleMedium
                             )
                         }
@@ -352,7 +424,7 @@ private fun ChatScreenView(
                                     .padding(end = 24.dp)
                                     .size(48.dp),
                                 bitmap = bitmap.asImageBitmap(),
-                                onClearClicked =  { onImageDeleteClicked(bitmap) }
+                                onClearClicked = { onImageDeleteClicked(bitmap) }
                             )
                         }
                     }

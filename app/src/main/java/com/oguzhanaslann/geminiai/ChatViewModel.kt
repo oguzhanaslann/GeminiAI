@@ -16,7 +16,7 @@ class ChatViewModel : ViewModel() {
     val _activeModel = MutableStateFlow<Model>(Model.Pro)
     val activeModel = _activeModel.asStateFlow()
 
-    private val generativeModel: GenerativeModel get() = _activeModel.value.create()
+    private val generativeModel: GenerativeModel get() = _activeModel.value.get()
 
     private val _uiState: MutableStateFlow<ChatState> =
         MutableStateFlow(ChatState.initial())
@@ -91,5 +91,9 @@ class ChatViewModel : ViewModel() {
 
     fun deleteImage(bitmap: Bitmap) {
         _uiState.update { it.copy(prompt = it.prompt.copy(images = it.prompt.images?.filter { it != bitmap })) }
+    }
+
+    fun onChangeAPIKey(apiKey: String) {
+        _activeModel.value.updateKey(apiKey)
     }
 }
